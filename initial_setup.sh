@@ -58,7 +58,7 @@ fi
 repo_name=$(aws cloudformation describe-stacks --stack-name "codecommit-repository-${uag_id}" --profile $aws_profile --query 'Stacks[0].Outputs[?OutputKey==`RepositoryNameOutput`].OutputValue' --output text)
 s3_name=$(aws cloudformation describe-stacks --stack-name "codecommit-repository-${uag_id}" --profile $aws_profile --query 'Stacks[0].Outputs[?OutputKey==`S3Output`].OutputValue' --output text)
 
-aws cloudformation deploy --capabilities CAPABILITY_NAMED_IAM --template-file $current_dir/codepipeline/template.yaml --stack-name codepipeline-app-$uag_id --profile $aws_profile --parameter-overrides RepositoryName=$repo_name BucketName=$s3_name;
+aws cloudformation deploy --capabilities CAPABILITY_NAMED_IAM --template-file $current_dir/codepipeline/template.yaml --stack-name codepipeline-app-$uag_id --profile $aws_profile --parameter-overrides RepositoryName=$repo_name BucketName=$s3_name UserId=$uag_id;
 
 # REGRESANDO GIT CREDENTIALS
 cp ~/.gitconfig2 ~/.gitconfig

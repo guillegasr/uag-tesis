@@ -7,7 +7,7 @@ Globals:
     Timeout: 3
 
 Parameters:
-    RepositoryBranch: # TODO AS MAPPING 
+    RepositoryBranch:
         Type: String
         Default: beta
         AllowedValues:
@@ -18,13 +18,16 @@ Parameters:
     BucketName:
       Type: String
       Description: Bucket Name.
+    UserId:
+        Type: String
+        Description: User ID to identify queues and functions names.
 Resources:
     # Pipeline
     AppPipeline:
         Type: AWS::CodePipeline::Pipeline
         Properties:
             RoleArn: !GetAtt CodePipelineServiceRole.Arn
-            Name: app-pipeline
+            Name: !Sub "app-pipeline-${UserId}"
             ArtifactStore:
                 Type: S3
                 Location: !Ref BucketName
@@ -63,7 +66,7 @@ Resources:
                           PrimarySource: app-code
                           EnvironmentVariables: !Join
                           - ""
-                          -   - !Sub '[{"name":"ENVIRONMENT","value":"beta","type":"PLAINTEXT"},{"name":"BucketName","value":"${BucketName}","type":"PLAINTEXT"}]'
+                          -   - !Sub '[{"name":"ENVIRONMENT","value":"beta","type":"PLAINTEXT"},{"name":"BucketName","value":"${BucketName}","type":"PLAINTEXT"},{"name":"UserId","value":"${UserId}","type":"PLAINTEXT"}]'
 
     # CodeBuild Job
     CodeBuildImageJob: 
@@ -86,7 +89,7 @@ Resources:
                     -
                         Name: DIST_ID
                         Value: ''
-            Name: app-codebuild
+            Name: !Sub "app-codebuild-${UserId}"
             Source:
                 BuildSpec: !Sub |
                     version: 0.2
@@ -128,10 +131,10 @@ Resources:
                                       fi;
                                     done;
                                     echo "packages were generated. Zipping scripts";
-                                    cd "$CODEBUILD_SRC_DIR/lambdas-packaged/";
+                                    cd "$CODEBUILD_SRC_DIR/infrastructure-packaged/";
                                     zip -r "$ENVIRONMENT.zip" . ;
                                     echo "uploading zip to S3 ...";
-                                    aws s3 cp "$ENVIRONMENT.zip" "s3://$BucketName/lambdas_artifacts/$ENVIRONMENT.zip";
+                                    aws s3 cp "$ENVIRONMENT.zip" "s3://$BucketName/artifacts/$ENVIRONMENT.zip";
                                     cd "$CODEBUILD_SRC_DIR/";
                                   fi;
                             finally:
@@ -143,7 +146,7 @@ Resources:
                                 - echo Deployment STARTED;
                                 - echo Synchronizing bucket;
                                 - if [[ "$ENVIRONMENT" == "beta" ]]; then
-                                    S3_URL=niz-app-761593577133;
+                                    S3_URL=$BucketName;
                                   fi;
                                 - if [[ "$ENVIRONMENT" == "beta" ]]; then
                                     S3_CF_SCRIPTS_FILE="beta.zip";
@@ -154,18 +157,27 @@ Resources:
                                     mkdir "$CODEBUILD_SRC_DIR/cloudformation_scripts";
                                     cd "$CODEBUILD_SRC_DIR/cloudformation_scripts";
                                     echo "Downloading S3 file $S3_CF_SCRIPTS_FILE";
-                                    aws s3 cp "s3://$BucketName/lambdas_artifacts/$S3_CF_SCRIPTS_FILE" . ;
+                                    aws s3 cp "s3://$BucketName/artifacts/$S3_CF_SCRIPTS_FILE" . ;
                                     echo "Unzipping ..." ;
                                     unzip "$S3_CF_SCRIPTS_FILE";
+                                    echo "Here...";
+                                    ls;
                                     for d in */; do
+                                      echo "In...";
+                                      ls;
                                       if test -f "$d/packaged.yml"; then
                                         sam_app=`echo $d | cut -f1 -d'/'`;
                                         params_to_override='';
-                                        if test -f "$d/$ENVIRONMENT.parameters.properties"; then
-                                          params_to_override=$(cat $ENVIRONMENT.parameters.properties | tr '\n' ' ');
+                                        if test -f "$d/$ENVIRONMENT.properties"; then
+                                          params_to_override=$(cat $d/$ENVIRONMENT.properties | tr '\n' ' ');
                                         fi;
                                         echo "Installing $sam_app in $ENVIRONMENT";
-                                        aws cloudformation deploy --s3-bucket $BucketName --stack-name $ENVIRONMENT-$sam_app --template-file $d/packaged.yml --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides deployStage=$ENVIRONMENT $params_to_override;
+                                        echo "BucketName... $BucketName";
+                                        echo "Env... $ENVIRONMENT";
+                                        echo "sam_app... $sam_app";
+                                        echo "d... $d";
+                                        echo "params_to_override... $params_to_override";
+                                        aws cloudformation deploy --s3-bucket $BucketName --stack-name $ENVIRONMENT-$sam_app-$UserId --template-file $d/packaged.yml --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides deployStage=$ENVIRONMENT $params_to_override;
                                         sleep 5;
                                       fi;
                                     done;
@@ -188,16 +200,13 @@ Resources:
                             - 'sts:AssumeRole'
                         Principal:
                             Service: codepipeline.amazonaws.com
-            RoleName: app-CodePipeline-Role
+            RoleName: !Sub "app-CodePipeline-Role-${UserId}"
             ManagedPolicyArns:
                 - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
                 - arn:aws:iam::aws:policy/AmazonS3FullAccess
             Policies:
                 -
-                    PolicyName:
-                        Fn::Sub:
-                        - ${Param1}-RolePolicy
-                        - Param1: app-CodePipeline
+                    PolicyName: !Sub "app-CodePipeline-RolePolicy-${UserId}"
                     PolicyDocument:
                         Statement:
                         -
@@ -212,7 +221,7 @@ Resources:
     CodeBuildRole: 
         Type: AWS::IAM::Role
         Properties:
-            RoleName: app-CodeBuild-Role
+            RoleName: !Sub "app-CodeBuild-Role-${UserId}"
             AssumeRolePolicyDocument:
                 Statement:
                 -
@@ -226,10 +235,7 @@ Resources:
                 - arn:aws:iam::aws:policy/AmazonS3FullAccess
             Policies:
                 -
-                    PolicyName:
-                        Fn::Sub:
-                        - ${Param1}-RolePolicy
-                        - Param1: app-CodePipeline
+                    PolicyName: !Sub "app-CodePipeline-RolePolicy-${UserId}"
                     PolicyDocument:
                         Statement:
                         -
@@ -293,6 +299,7 @@ Resources:
                                 - lambda:UpdateFunctionConfiguration
                                 - lambda:PublishLayerVersion
                                 - lambda:GetLayerVersion
+                                - lambda:CreateAlias
                             Effect: Allow
                             Resource:
                                 - '*'
@@ -318,13 +325,9 @@ Resources:
                                 - !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/*
                         -
                             Action:
-                                - cognito-idp:CreateUserPool
-                                - cognito-idp:DeleteUserPool 
-                                - cognito-idp:CreateUserPoolClient
-                                - cognito-idp:DescribeUserPool
-                                - cognito-idp:UpdateUserPool 
-                                - cognito-idp:ListTagsForResource
-                                - cognito-idp:AddCustomAttributes
+                                - sqs:*
+                                - iam:*
+                                - cloudfront:*
                             Effect: Allow
                             Resource:
                                 - '*'

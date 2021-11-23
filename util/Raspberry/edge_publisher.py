@@ -1,10 +1,10 @@
 import json
 import boto3
 
-session = boto3.session.Session(profile_name='personal')
+session = boto3.session.Session(profile_name='uagrole')
 account = "820212852497"
 environment = "beta"
-userId = "4636267"
+userId = "5636267"
 
 QueueUrl = f"https://sqs.us-east-1.amazonaws.com/{account}/{environment}-{userId}-data-receiver"
 

@@ -3,7 +3,7 @@ import boto3
 import os
 
 TABLE_NAME = os.getenv("TABLE_NAME")
-EVENT_QUEUE_URL = os.getenv("EVENT_QUEUE_NAME")
+EVENT_QUEUE_URL = os.getenv("EVENT_QUEUE_URL")
 account = "820212852497"
 
 def lambda_handler(event, context):

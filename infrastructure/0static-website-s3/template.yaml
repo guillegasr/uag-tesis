@@ -9,26 +9,16 @@ Parameters:
   RootDomainName:
     Description: Domain name for your website (example.com)
     Type: String
+  UserId:
+    Type: String
+    Description: User ID to identify queues and functions names.
 
 Resources:
   RootBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub '${AWS::AccountId}-${RootDomainName}'
+      BucketName: !Sub '${AWS::AccountId}-${RootDomainName}-${UserId}'
       AccessControl: PublicRead
-      # WebsiteConfiguration:
-      #   IndexDocument: index.html
-      #   ErrorDocument: 404.html
-  # WWWBucket:
-  #   Type: AWS::S3::Bucket
-  #   Properties:
-  #     BucketName: !Sub
-  #         - www.${Domain}
-  #         - Domain: !Ref RootDomainName
-  #     AccessControl: BucketOwnerFullControl
-  #     WebsiteConfiguration:
-  #       RedirectAllRequestsTo:
-  #         HostName: !Ref RootBucket
   SampleBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -88,9 +78,15 @@ Resources:
                     - Ref: uagdistOrigin1S3Origin97E9B73D
   
 Outputs:
+  BucketName:
+    Value: !Ref RootBucket
+    Description: Bucket name
   DomainName:
     Value: !GetAtt RootBucket.DomainName
     Description: DomainName for website hosted on S3
   WebsiteURL:
     Value: !GetAtt RootBucket.WebsiteURL
     Description: URL for website hosted on S3
+  CloudFrontURL:
+    Value: !GetAtt cloudfrontiodist.DomainName
+    Description: Cloudfront distribution URL
