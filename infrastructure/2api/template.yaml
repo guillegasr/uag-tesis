@@ -65,4 +65,6 @@ Outputs:
   dataReaderFunctionOutput:
     Description: "Lambda ARN"
     Value: !GetAtt DataReader.Arn
-
+  ApiIdOutput:
+    Description: "API ID"
+    Value: !Ref ApiGatewayApi
