@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: UAG IoT project - data manager service.
+Parameters:
+  deployStage:
+    Type: String
+    Default: beta
+    AllowedValues:
+    - beta
+    - prod
+    Description: Environment of this stack of resources.
+  UserId:
+    Type: String
+    Description: User ID to identify queues and functions names.
+Globals:
+  Function:
+    Runtime: python3.8
+    Timeout: 60
+    MemorySize: 256
+Mappings:
+  Global:
+    Functions:
+      dataReader: data-reader
+Resources:
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      EndpointConfiguration:
+        Type: REGIONAL
+  DataReader:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Join:
+        - ''
+        - - Fn::FindInMap:
+            - Global
+            - Functions
+            - dataReader
+          - Fn::Sub: -${UserId}
+      AutoPublishAlias: live
+      CodeUri: DataReader
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Fn::ImportValue:
+              Fn::Sub: dataTableName-${UserId}
+      Description: Lambda to read data from DynamoDB.
+      Policies:
+      - Version: '2012-10-17'
+        Statement:
+          Sid: DataReaderFunctionPermissions
+          Effect: Allow
+          Action:
+          - dynamoDb:*
+          Resource:
+          - '*'
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /sensors
+            Method: get
+            RestApiId:
+              Ref: ApiGatewayApi
+Outputs:
+  dataReaderFunctionOutput:
+    Description: Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - DataReader
+      - Arn

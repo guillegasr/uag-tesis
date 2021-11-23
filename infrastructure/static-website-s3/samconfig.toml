@@ -1,0 +1,13 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "static-website"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1hbsexfjopjt4"
+s3_prefix = "static-website"
+region = "us-east-1"
+profile = "personal"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "RootDomainName=\"uag-test.com\""
+disable_rollback = true
+image_repositories = []

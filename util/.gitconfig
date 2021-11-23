@@ -1,0 +1,3 @@
+[credential]
+	helper = !aws --profile uagrole codecommit credential-helper $@
+	UseHttpPath = true

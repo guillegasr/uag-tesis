@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: UAG IoT project - data manager service.
+Parameters:
+  deployStage:
+    Type: String
+    Default: beta
+    AllowedValues:
+      - beta
+      - prod
+    Description: Environment of this stack of resources.
+  DataReceiverQueue:
+    Type: String
+    Description: Data Receiver Queue Name.
+    Default: data-receiver
+  DataEventQueue:
+    Type: String
+    Description: Data Receiver Queue Name.
+    Default: data-event
+  UserId:
+    Type: String
+    Description: User ID to identify queues and functions names.
+
+Globals:
+  Function:
+    Runtime: python3.8
+    Timeout: 60
+    MemorySize: 256
+
+Mappings:
+  Global:
+    Functions:
+      dataReceiver: data-receiver
+      dataEvent: data-event
+    Dynamo:
+      tableName: data-table
+
+Resources:
+  dataReceiverQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${deployStage}-${UserId}-${DataReceiverQueue}"
+      VisibilityTimeout: 60
+  dataEventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${deployStage}-${UserId}-${DataEventQueue}"
+      VisibilityTimeout: 60
+  dataReceiverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Join [ "", [!FindInMap [Global,Functions, dataReceiver],  !Sub "-${UserId}"]]
+      AutoPublishAlias: live
+      CodeUri: receiver/src/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LOG_LEVEL: ERROR
+          TABLE_NAME: !Join [ "", [!FindInMap [Global,Dynamo, tableName],  !Sub "-${UserId}"]]
+      Description: Lambda to consume data from receiver SQS queue and send it to DynamoDB.
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            Sid: "DataReceiverFunctionPermissions"
+            Effect: Allow
+            Action:
+              - dynamoDb:*
+              - sqs:*
+            Resource:
+              - "*"
+      Events:
+        SQSInvocation:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt dataReceiverQueue.Arn
+            Enabled: true
+  dataEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Join [ "", [!FindInMap [Global,Functions, dataEvent],  !Sub "-${UserId}"]]
+      AutoPublishAlias: live
+      CodeUri: event/src/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LOG_LEVEL: ERROR
+          EVENT_QUEUE_URL: !Ref dataEventQueue
+      Description: Lambda to send message to Event SQS queue when a new item is created/modify on DDB.
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            Sid: "DataEventFunctionPermissions"
+            Effect: Allow
+            Action:
+              - dynamoDb:*
+              - sqs:*
+            Resource:
+              - "*"
+      Events:
+        DDBEvent:
+          Type: DynamoDB
+          Properties:
+            Stream: 
+              !GetAtt DataTable.StreamArn
+            StartingPosition: TRIM_HORIZON
+            BatchSize: 10
+            Enabled: true
+  
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Join [ "", [!FindInMap [Global,Dynamo, tableName],  !Sub "-${UserId}"]]
+      StreamSpecification: 
+        StreamViewType: "NEW_IMAGE"
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+
+Outputs:
+  dataEventFunctionOutput:
+    Description: "Lambda ARN"
+    Value: !GetAtt dataEventFunction.Arn
+  dynamoDBTableOutput:
+    Description: "Data Table name"
+    Value: !Ref DataTable
+    Export:
+      Name: !Sub "dataTableName-${UserId}"
+  dataReceiverQueueOutput:
+    Description: "Data Reader Queue Url"
+    Value: !Ref dataReceiverQueue
+  dataEventOutput:
+    Description: "Data Event Queue Url"
+    Value: !Ref dataEventQueue

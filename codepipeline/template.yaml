@@ -1,0 +1,331 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Triggers a deployment on codecommit deployment. The change should be on ${RepositoryBranch}.
+Globals:
+  Function:
+    Timeout: 3
+
+Parameters:
+    RepositoryBranch: # TODO AS MAPPING 
+        Type: String
+        Default: beta
+        AllowedValues:
+            - beta
+    RepositoryName:
+      Type: String
+      Description: Repository Name.
+    BucketName:
+      Type: String
+      Description: Bucket Name.
+Resources:
+    # Pipeline
+    AppPipeline:
+        Type: AWS::CodePipeline::Pipeline
+        Properties:
+            RoleArn: !GetAtt CodePipelineServiceRole.Arn
+            Name: app-pipeline
+            ArtifactStore:
+                Type: S3
+                Location: !Ref BucketName
+            Stages:
+            -
+                Name: Source
+                Actions:
+                    -
+                        Name: SourceAction
+                        ActionTypeId:
+                            Category: Source
+                            Owner: AWS
+                            Version: 1
+                            Provider: CodeCommit
+                        Configuration:
+                            BranchName: !Ref RepositoryBranch
+                            RepositoryName: !Ref RepositoryName
+                            PollForSourceChanges: true
+                        OutputArtifacts:
+                            - Name: app-code
+            -
+                Name: Beta
+                Actions:
+                    -
+                      Name: BetaAction
+                      InputArtifacts:
+                          - Name: app-code
+                      ActionTypeId:
+                          Category: Build
+                          Owner: AWS
+                          Version: 1
+                          Provider: CodeBuild
+                      Configuration:
+                          ProjectName:
+                              Ref: CodeBuildImageJob
+                          PrimarySource: app-code
+                          EnvironmentVariables: !Join
+                          - ""
+                          -   - !Sub '[{"name":"ENVIRONMENT","value":"beta","type":"PLAINTEXT"},{"name":"BucketName","value":"${BucketName}","type":"PLAINTEXT"}]'
+
+    # CodeBuild Job
+    CodeBuildImageJob: 
+        Type: AWS::CodeBuild::Project
+        DependsOn: CodeBuildRole
+        Properties:
+            Artifacts:
+                Type: CODEPIPELINE
+            ServiceRole: !Ref CodeBuildRole
+            Description: CodeBuild Project.
+            Environment:
+                ComputeType: BUILD_GENERAL1_SMALL
+                Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+                PrivilegedMode: true
+                Type: LINUX_CONTAINER
+                EnvironmentVariables:
+                    -
+                        Name: ENVIRONMENT
+                        Value: ''
+                    -
+                        Name: DIST_ID
+                        Value: ''
+            Name: app-codebuild
+            Source:
+                BuildSpec: !Sub |
+                    version: 0.2
+                    phases:
+                        install:
+                            runtime-versions:
+                                python: 3.8
+                            commands:
+                                - echo Phase INSTALL was STARTED on `date`
+                                - echo "Installing SAM..."
+                                - pip install aws-sam-cli
+                            finally:
+                            - echo Phase INSTALL was COMPLETED on `date`
+                            - if [ "$CODEBUILD_BUILD_SUCCEEDING" -eq 1 ]; then echo 'INSTALL SUCCESSFUL'; else echo 'INSTALL FAILED'; exit 1; fi
+                        pre_build:
+                            commands:
+                                - echo Phase TEST was STARTED on `date`
+                                - echo 'NO TEST :('
+                            finally:
+                                - echo Phase TEST was COMPLETED on `date`
+                                - if [ "$CODEBUILD_BUILD_SUCCEEDING" -eq 1 ]; then echo 'TEST SUCCESSFUL'; else echo 'TEST FAILED'; exit 1; fi
+                        build:
+                            commands:
+                                - echo Phase BUILD/DEPLOY was STARTED on `date`
+                                - echo "Looking for SAM applications ..."
+                                - echo "in environment $ENVIRONMENT"
+                                - mkdir $CODEBUILD_SRC_DIR/infrastructure-packaged
+                                - if [[ "$ENVIRONMENT" == "beta" ]]; then
+                                    cd $CODEBUILD_SRC_DIR/infrastructure;
+                                    for d in */; do
+                                      if test -f "$d/template.yaml"; then
+                                        sam_app=`echo $d | cut -f1 -d'/'`;
+                                        cd $d;
+                                        echo "creating package $sam_app";
+                                        mkdir $CODEBUILD_SRC_DIR/infrastructure-packaged/$sam_app;
+                                        sam build && sam package --s3-bucket $BucketName --s3-prefix "sam_artifacts/$sam_app" --output-template-file "$CODEBUILD_SRC_DIR/infrastructure-packaged/$sam_app/packaged.yml";
+                                        cp *.properties $CODEBUILD_SRC_DIR/infrastructure-packaged/$sam_app/;
+                                        cd ..;
+                                      fi;
+                                    done;
+                                    echo "packages were generated. Zipping scripts";
+                                    cd "$CODEBUILD_SRC_DIR/lambdas-packaged/";
+                                    zip -r "$ENVIRONMENT.zip" . ;
+                                    echo "uploading zip to S3 ...";
+                                    aws s3 cp "$ENVIRONMENT.zip" "s3://$BucketName/lambdas_artifacts/$ENVIRONMENT.zip";
+                                    cd "$CODEBUILD_SRC_DIR/";
+                                  fi;
+                            finally:
+                                - echo Phase BUILD/DEPLOY was COMPLETED on `date`
+                                - if [ "$CODEBUILD_BUILD_SUCCEEDING" -eq 1 ]; then echo 'IMAGE BUILD SUCCESSFUL'; else echo 'IMAGE BUILD FAILED'; exit 1; fi
+                        post_build:
+                            commands:
+                                - echo Phase POST_BUILD was STARTED on `date`
+                                - echo Deployment STARTED;
+                                - echo Synchronizing bucket;
+                                - if [[ "$ENVIRONMENT" == "beta" ]]; then
+                                    S3_URL=niz-app-761593577133;
+                                  fi;
+                                - if [[ "$ENVIRONMENT" == "beta" ]]; then
+                                    S3_CF_SCRIPTS_FILE="beta.zip";
+                                    echo "Setting BETA.zip file.";
+                                  fi;
+
+                                  if [ ! -z "$ENVIRONMENT" -a "$ENVIRONMENT" != " " ]; then
+                                    mkdir "$CODEBUILD_SRC_DIR/cloudformation_scripts";
+                                    cd "$CODEBUILD_SRC_DIR/cloudformation_scripts";
+                                    echo "Downloading S3 file $S3_CF_SCRIPTS_FILE";
+                                    aws s3 cp "s3://$BucketName/lambdas_artifacts/$S3_CF_SCRIPTS_FILE" . ;
+                                    echo "Unzipping ..." ;
+                                    unzip "$S3_CF_SCRIPTS_FILE";
+                                    for d in */; do
+                                      if test -f "$d/packaged.yml"; then
+                                        sam_app=`echo $d | cut -f1 -d'/'`;
+                                        params_to_override='';
+                                        if test -f "$d/$ENVIRONMENT.parameters.properties"; then
+                                          params_to_override=$(cat $ENVIRONMENT.parameters.properties | tr '\n' ' ');
+                                        fi;
+                                        echo "Installing $sam_app in $ENVIRONMENT";
+                                        aws cloudformation deploy --s3-bucket $BucketName --stack-name $ENVIRONMENT-$sam_app --template-file $d/packaged.yml --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides deployStage=$ENVIRONMENT $params_to_override;
+                                        sleep 5;
+                                      fi;
+                                    done;
+                                  fi;
+                            finally:
+                                - echo Phase POST_BUILD was COMPLETED on `date`
+                                - if [ "$CODEBUILD_BUILD_SUCCEEDING" -eq 1 ]; then echo 'IMAGE POST BUILD SUCCESSFUL'; else echo 'IMAGE POST BUILD FAILED'; exit 1; fi
+                Type: CODEPIPELINE
+
+    # Roles
+    CodePipelineServiceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    -
+                        Effect: Allow
+                        Action:
+                            - 'sts:AssumeRole'
+                        Principal:
+                            Service: codepipeline.amazonaws.com
+            RoleName: app-CodePipeline-Role
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
+                - arn:aws:iam::aws:policy/AmazonS3FullAccess
+            Policies:
+                -
+                    PolicyName:
+                        Fn::Sub:
+                        - ${Param1}-RolePolicy
+                        - Param1: app-CodePipeline
+                    PolicyDocument:
+                        Statement:
+                        -
+                            Action:
+                                - codebuild:StartBuild
+                                - codebuild:BatchGetBuilds
+                                - codecommit:UploadArchive
+                            Effect: Allow
+                            Resource: '*'
+                        Version: '2012-10-17'
+
+    CodeBuildRole: 
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: app-CodeBuild-Role
+            AssumeRolePolicyDocument:
+                Statement:
+                -
+                    Action: sts:AssumeRole
+                    Effect: Allow
+                    Principal:
+                        Service: codebuild.amazonaws.com
+                Version: '2012-10-17'
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
+                - arn:aws:iam::aws:policy/AmazonS3FullAccess
+            Policies:
+                -
+                    PolicyName:
+                        Fn::Sub:
+                        - ${Param1}-RolePolicy
+                        - Param1: app-CodePipeline
+                    PolicyDocument:
+                        Statement:
+                        -
+                            Action:
+                                - logs:CreateLogGroup
+                                - logs:DescribeLogGroups
+                                - logs:CreateLogStream
+                                - logs:DescribeLogStreams
+                                - logs:PutLogEvents
+                                - logs:PutRetentionPolicy
+                                - logs:DeleteLogGroup
+                                - s3:*
+                            Effect: Allow
+                            Resource:
+                            - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+                        -
+                            Action:
+                                - cloudformation:DescribeStacks
+                                - cloudformation:GetTemplateSummary
+                                - cloudformation:CreateChangeSet
+                                - cloudformation:ExecuteChangeSet
+                                - cloudformation:DescribeChangeSet
+                                - cloudformation:GetTemplateSummary
+                                - cloudformation:DescribeStackEvents
+                            Effect: Allow
+                            Resource:
+                            - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*'
+                            - !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+                        -
+                            Action:
+                                - iam:CreateRole
+                                - iam:PutRolePolicy
+                                - iam:PassRole
+                                - iam:GetRole
+                                - iam:CreatePolicy
+                                - iam:AttachRolePolicy
+                                - iam:DeleteRolePolicy
+                                - iam:DetachRolePolicy
+                                - iam:DeleteRole
+                            Effect: Allow
+                            Resource:
+                            - !Sub arn:aws:iam::${AWS::AccountId}:role/*
+                        -
+                            Action:
+                                - lambda:CreateFunction
+                                - lambda:GetFunction
+                                - lambda:DeleteFunction
+                                - lambda:UpdateFunctionCode
+                                - lambda:GetLayerVersion
+                                - lambda:CreateEventSourceMapping
+                                - lambda:DeleteEventSourceMapping
+                                - lambda:GetEventSourceMapping
+                                - lambda:ListTags
+                                - lambda:UntagResource
+                                - lambda:ListVersionsByFunction
+                                - lambda:PublishVersion
+                                - lambda:UpdateAlias
+                                - lambda:GetFunctionConfiguration
+                                - lambda:AddPermission
+                                - lambda:RemovePermission
+                                - lambda:UpdateFunctionConfiguration
+                                - lambda:PublishLayerVersion
+                                - lambda:GetLayerVersion
+                            Effect: Allow
+                            Resource:
+                                - '*'
+                        -
+                            Action:
+                                - dynamodb:*
+                            Effect: Allow
+                            Resource:
+                                - '*'
+                        -
+                            Action:
+                                - apigateway:*
+                            Effect: Allow
+                            Resource:
+                                - !Sub arn:aws:apigateway:${AWS::Region}::/restapis*
+                                - !Sub arn:aws:apigateway:${AWS::Region}::/usageplans*
+                                - !Sub arn:aws:apigateway:${AWS::Region}::/apikeys*
+                        -
+                            Action:
+                                - cloudfront:CreateInvalidation
+                            Effect: Allow
+                            Resource:
+                                - !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/*
+                        -
+                            Action:
+                                - cognito-idp:CreateUserPool
+                                - cognito-idp:DeleteUserPool 
+                                - cognito-idp:CreateUserPoolClient
+                                - cognito-idp:DescribeUserPool
+                                - cognito-idp:UpdateUserPool 
+                                - cognito-idp:ListTagsForResource
+                                - cognito-idp:AddCustomAttributes
+                            Effect: Allow
+                            Resource:
+                                - '*'
+                        Version: '2012-10-17'

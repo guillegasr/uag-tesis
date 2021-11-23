@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Codecommit Repository Template.
+Parameters:
+  UserId:
+    Type: String
+    Description: User ID to identify queues and functions names.
+
+Resources:
+  MyRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub "${UserId}-repositorio-basico-iot"
+      RepositoryDescription: Repositorio de AWS para manejar los recursos de la plantilla base de un proyecto de internet de las cosas.
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub "${UserId}-${AWS::AccountId}-artifacts"
+
+Outputs:
+  RepositoryURLOutput:
+    Description: "Repisotory URL"
+    Value: !GetAtt MyRepo.CloneUrlHttp
+  RepositoryNameOutput:
+    Description: "Repisotory Name"
+    Value: !GetAtt MyRepo.Name
+  S3Output:
+    Description: "S3 artifact bucket name"
+    Value: !Ref S3Bucket
