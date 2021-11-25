@@ -30,4 +30,19 @@ s3_name=$(aws cloudformation describe-stacks --stack-name "codecommit-repository
 
 aws cloudformation deploy --capabilities CAPABILITY_NAMED_IAM --template-file $repos_dir/$codecommit_repo_name/codepipeline/template.yaml --stack-name codepipeline-app-$USER_ID --profile uagrole --parameter-overrides RepositoryName=$repo_name BucketName=$s3_name UserId=$USER_ID;
 
+sleep 30m
+
+state=''
+while [state != "Succeeded"]
+do
+  state=$(aws codepipeline get-pipeline-state --name app-pipeline-$USER_ID --profile uagrole --query 'stageStates[?stageName==`Beta`].latestExecution.status' --output text )
+done
+
+bucket_name=$(aws cloudformation describe-stacks --stack-name "${ENVIRONMENT}-0static-website-s3-${USER_ID}" --profile uagrole --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text)
+api_id=$(aws cloudformation describe-stacks --stack-name "${ENVIRONMENT}-2api-${USER_ID}" --profile uagrole --query 'Stacks[0].Outputs[?OutputKey==`ApiIdOutput`].OutputValue' --output text)
+
+sed -i "s#YOUR_API_ID#$api_id#" $repos_dir/$codecommit_repo_name/website/appController.js
+
+aws s3 sync $repos_dir/$codecommit_repo_name/website/ s3://$bucket_name --profile uagrole
+
 supervisord -c $supervisord_path

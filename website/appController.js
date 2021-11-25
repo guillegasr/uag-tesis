@@ -1,7 +1,7 @@
 angular.module("MyFirstApp", [])
   .controller("FirstController", ["$scope", "$http", function ($scope, $http) {
     $scope.values = {};
-    var apiId= "r94wggpez1";
+    var apiId= "YOUR_API_ID";
     $http.get("https://" + apiId + ".execute-api.us-east-1.amazonaws.com/prod/sensors")
       .success(function (data) {
         data = flatten(data)
