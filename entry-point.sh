@@ -15,6 +15,7 @@ sed -i "s#ROOT_DOMAIN_NAME#$ROOT_DOMAIN_NAME#" $working_dir/infrastructure/0stat
 sed -i "s#USER_ID#$USER_ID#" $working_dir/infrastructure/0static-website-s3/beta.properties
 sed -i "s#USER_ID#$USER_ID#" $working_dir/infrastructure/1data-manager-app/beta.properties
 sed -i "s#USER_ID#$USER_ID#" $working_dir/infrastructure/2api/beta.properties
+sed -i "s#USER_ID#$USER_ID#" $working_dir/codecommit-repository/beta.properties
 
 aws cloudformation deploy --template-file $working_dir/codecommit-repository/template.yaml --profile uagrole --stack-name "codecommit-repository-${USER_ID}" --region us-east-1 --parameter-overrides UserId=$USER_ID;
 
