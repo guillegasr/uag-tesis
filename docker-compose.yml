@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  uagtesisiot:
+    image: uag-tesis:1.1
+    volumes:
+      - .:/root/repositorios/github-uag-tesis
+    privileged: true
+    stdin_open: true
+    tty: true
+    entrypoint: "/root/repositorios/github-uag-tesis/entry-point.sh"
+    container_name: uag-tesis-container
+    restart: on-failure
+    env_file:
+      - ./env
+    

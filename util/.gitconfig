@@ -1,3 +1,6 @@
+[user]
+	email = guillermo.gr8@hotmail.com
+	name = Guillermo Gastelum
 [credential]
 	helper = !aws --profile uagrole codecommit credential-helper $@
 	UseHttpPath = true
