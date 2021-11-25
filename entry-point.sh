@@ -32,10 +32,11 @@ aws cloudformation deploy --capabilities CAPABILITY_NAMED_IAM --template-file $r
 
 sleep 30
 
-state=''
-while [$state != "Succeeded"]
-do
+state='Init'
+while [ "$state" != "Succeeded" ]; do
+  echo $state
   state=$(aws codepipeline get-pipeline-state --name app-pipeline-$USER_ID --profile uagrole --query 'stageStates[?stageName==`Beta`].latestExecution.status' --output text )
+  sleep 10
 done
 
 bucket_name=$(aws cloudformation describe-stacks --stack-name "${ENVIRONMENT}-0static-website-s3-${USER_ID}" --profile uagrole --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text)
