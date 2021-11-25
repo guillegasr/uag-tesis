@@ -30,10 +30,10 @@ s3_name=$(aws cloudformation describe-stacks --stack-name "codecommit-repository
 
 aws cloudformation deploy --capabilities CAPABILITY_NAMED_IAM --template-file $repos_dir/$codecommit_repo_name/codepipeline/template.yaml --stack-name codepipeline-app-$USER_ID --profile uagrole --parameter-overrides RepositoryName=$repo_name BucketName=$s3_name UserId=$USER_ID;
 
-sleep 30m
+sleep 30
 
 state=''
-while [state != "Succeeded"]
+while [$state != "Succeeded"]
 do
   state=$(aws codepipeline get-pipeline-state --name app-pipeline-$USER_ID --profile uagrole --query 'stageStates[?stageName==`Beta`].latestExecution.status' --output text )
 done
