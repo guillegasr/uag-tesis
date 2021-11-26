@@ -1,5 +1,12 @@
-FROM uag-tesis:1.0
+FROM guillegasr/uagtesis
 COPY ./entry-point.sh /home
 RUN chmod u+x /home/entry-point.sh
-WORKDIR /home
-RUN /home/entry-point.sh
+WORKDIR /root
+ENV ENVIRONMENT=beta
+ENV PROFILE=uagrole
+ENV AWS_ACCESS_KEY=AWS_ACCESS_KEY
+ENV AWS_SECRET_KEY=AWS_SECRET_KEY
+ENV AWS_ACCOUNT=AWS_ACCOUNT
+ENV ROOT_DOMAIN_NAME=YOUR_DOMAIN_NAME
+ENV USER_ID=YOUR_USER_ID
+RUN /root/entry-point.sh
