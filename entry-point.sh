@@ -1,10 +1,13 @@
 #!/bin/bash
 
 # Configuracion inicial
-working_dir="~/repositorios/github-uag-tesis"
+working_dir="/root/repositorios/github-uag-tesis"
 supervisord_path="$working_dir/supervisord.conf"
-repos_dir="$working_dir/.."
+repos_dir="/root/repositorios"
+mkdir ~/repositorios
 mkdir ~/.aws
+cd $repos_dir
+git clone https://github.com/guillegasr/uag-tesis.git github-uag-tesis
 ln -s $working_dir/util/credentials ~/.aws/credentials
 cp $working_dir/util/.gitconfig ~/.gitconfig
 
