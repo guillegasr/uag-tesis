@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuracion inicial
-working_dir="/root/repositorios/github-uag-tesis"
+working_dir="~/repositorios/github-uag-tesis"
 supervisord_path="$working_dir/supervisord.conf"
 repos_dir="$working_dir/.."
 mkdir ~/.aws

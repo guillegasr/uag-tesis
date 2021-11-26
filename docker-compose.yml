@@ -2,7 +2,7 @@ version: '3'
 
 services:
   uagtesisiot:
-    image: uag-tesis:1.1
+    image: guillegasr/uagtesis
     volumes:
       - .:/root/repositorios/github-uag-tesis
     privileged: true
